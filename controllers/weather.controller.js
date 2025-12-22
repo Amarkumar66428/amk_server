@@ -1,9 +1,10 @@
 const axios = require('axios');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
+const config = require("config");
 
 const WEATHER_API_BASE_URL = 'https://api.openweathermap.org/data/2.5';
-const API_KEY = process.env.OPENWEATHER_API_KEY || '8108cad92f19dfc4eaba58c0a6a01aaa';
+const API_KEY = config.get('open_weather_key');
 
 /**
  * Get both current weather and forecast in one request
@@ -50,7 +51,9 @@ const getCurrentAndForecast = async (req, res, next) => {
         condition: currentResponse.current.weather.main,
         description: currentResponse.current.weather.description,
         dateLabel: formatDateLabel(now), // e.g. \"Monday, 4th May\"
-        temperature: `${Math.round(currentResponse.current.temperature)}${unitSymbol}`
+        temperature: `${Math.round(currentResponse.current.temperature)}${unitSymbol}`,
+        icon: currentResponse.current.weather.icon,
+        iconUrl: currentResponse.current.weather.iconUrl
       },
       upcoming: upcomingDaysForCard
     };
@@ -66,7 +69,7 @@ const getCurrentAndForecast = async (req, res, next) => {
 // Helper function to get current weather data
 const getCurrentWeatherData = async (city, lat, lon, units) => {
   let url = `${WEATHER_API_BASE_URL}/weather?appid=${API_KEY}&units=${units}`;
-  
+
   if (city) {
     url += `&q=${encodeURIComponent(city)}`;
   } else if (lat && lon) {
@@ -131,7 +134,7 @@ const getForecastData = async (city, lat, lon, days, units) => {
   const forecastsByDate = {};
   forecastData.list.forEach(item => {
     const date = new Date(item.dt * 1000).toISOString().split('T')[0];
-    
+
     if (!forecastsByDate[date]) {
       forecastsByDate[date] = {
         date: date,
@@ -170,7 +173,7 @@ const getForecastData = async (city, lat, lon, days, units) => {
     const temps = dayData.forecasts.map(f => f.temperature);
     const humidities = dayData.forecasts.map(f => f.humidity);
     const pressures = dayData.forecasts.map(f => f.pressure);
-    
+
     return {
       date: dayData.date,
       summary: {
@@ -201,11 +204,11 @@ const getDominantWeather = (forecasts) => {
     const main = f.weather.main;
     weatherCounts[main] = (weatherCounts[main] || 0) + 1;
   });
-  
-  const dominant = Object.keys(weatherCounts).reduce((a, b) => 
+
+  const dominant = Object.keys(weatherCounts).reduce((a, b) =>
     weatherCounts[a] > weatherCounts[b] ? a : b
   );
-  
+
   const dominantForecast = forecasts.find(f => f.weather.main === dominant);
   return dominantForecast.weather;
 };
