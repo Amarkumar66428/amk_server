@@ -9,7 +9,7 @@ const toolsRoutes = require('./tools.routes');
 // V2 Route definitions
 router.use('/auth', authRoutes);
 router.use('/user', userRoutes);
-router.use('/tools', toolsRoutes);
+router.use('/invoice', toolsRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {

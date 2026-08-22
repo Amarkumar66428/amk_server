@@ -23,11 +23,13 @@
     "config": "^4.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2",
+    "express": "^4.22.2",
+    "handlebars": "^4.7.9",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.2",
     "morgan": "^1.10.0",
-    "puppeteer": "^25.7.0"
+    "puppeteer": "^25.8.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

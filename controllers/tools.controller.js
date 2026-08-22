@@ -1,94 +1,188 @@
-const puppeteer = require("puppeteer")
+const { z } = require("zod");
 
-let browserInstance = null;
+const {
+  getTemplate,
+  getTemplateMetadata,
+} = require("../services/templateService");
 
-async function getBrowser() {
-  if (!browserInstance || !browserInstance.connected) {
-    browserInstance = await puppeteer.launch({
-      headless: true, // Use standard headless
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        // REMOVED '--single-process' -> This causes Windows crashes
-      ],
-    });
+const { renderInvoice } = require("../services/invoiceRenderer");
 
-    browserInstance.on('disconnected', () => {
-      browserInstance = null;
-    });
+const { createPdf } = require("../services/pdfService");
+
+const itemSchema = z.object({
+  id: z.string().optional(),
+
+  description: z.string().max(500).default(""),
+
+  quantity: z.coerce.number().min(0).max(100000),
+
+  rate: z.coerce.number().min(0).max(100000000),
+});
+
+const partySchema = z.object({
+  name: z.string().max(200),
+
+  email: z.string().max(320),
+
+  address: z.string().max(1000),
+});
+
+const invoiceSchema = z.object({
+  invoiceNumber: z.string().max(100),
+
+  invoiceDate: z.string().max(30),
+
+  dueDate: z.string().max(30).optional().default(""),
+
+  currency: z.enum(["INR", "USD", "EUR", "GBP"]),
+
+  sender: partySchema,
+
+  client: partySchema,
+
+  items: z.array(itemSchema).min(1).max(100),
+
+  taxRate: z.coerce.number().min(0).max(100),
+
+  discount: z.coerce.number().min(0),
+
+  notes: z.string().max(5000).optional().default(""),
+});
+
+const appearanceSchema = z.object({
+  fontFamily: z.string().max(50).optional(),
+
+  fontSize: z.coerce.number().min(10).max(20).optional(),
+
+  accentColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+
+  textColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+});
+
+function sanitizeFilename(value) {
+  let filename = String(value || "invoice.pdf")
+    .replace(/[\r\n"]/g, "")
+
+    .replace(/[<>:"/\\|?*]/g, "_")
+
+    .trim();
+
+  if (!filename.toLowerCase().endsWith(".pdf")) {
+    filename += ".pdf";
   }
-  return browserInstance;
+
+  return filename;
 }
-const pdfDownload = async (req, res) => {
- const { htmlContent, filename = 'document.pdf' } = req.body;
 
-  if (!htmlContent || typeof htmlContent !== 'string') {
-    return res.status(400).json({ error: 'Valid htmlContent string is required.' });
+async function listTemplates(req, res) {
+  return res.json({
+    templates: getTemplateMetadata(),
+  });
+}
+
+async function getTemplateDefinition(req, res) {
+  const template = getTemplate(req.params.templateId);
+
+  if (!template) {
+    return res.status(404).json({
+      error: "Template not found",
+    });
   }
 
-  let page = null;
+  return res.json({
+    template: {
+      id: template.id,
 
+      name: template.name,
+
+      category: template.category,
+
+      isFree: template.isFree,
+
+      defaultAppearance: template.defaultAppearance,
+
+      html: template.html,
+
+      css: template.css,
+    },
+  });
+}
+
+async function downloadPdf(req, res) {
   try {
-    const browser = await getBrowser();
-    page = await browser.newPage();
+    const templateId = z.string().min(1).parse(req.body.templateId);
 
-    // 1. Set viewport
-    await page.setViewport({ width: 1200, height: 800, deviceScaleFactor: 1 });
+    const invoice = invoiceSchema.parse(req.body.invoice);
 
-    // 2. Use 'domcontentloaded' or 'load' to avoid infinite hanging
-    await page.setContent(htmlContent, {
-      waitUntil: 'load',
-      timeout: 30000,
+    const appearance = appearanceSchema.parse(req.body.appearance || {});
+
+    const template = getTemplate(templateId);
+
+    if (!template) {
+      return res.status(404).json({
+        error: "Invoice template not found",
+      });
+    }
+
+    /*
+     * Optional:
+     * verify paid template entitlement here.
+     */
+    if (!template.isFree && !req.user) {
+      return res.status(403).json({
+        error: "Template requires access",
+      });
+    }
+
+    const html = renderInvoice({
+      invoice,
+      template,
+      appearance,
     });
 
-    // 3. Wait for fonts safely with a fallback
-    await page.evaluate(async () => {
-      if (document.fonts) {
-        await document.fonts.ready;
-      }
-    }).catch(() => {});
+    const pdfBuffer = await createPdf(html);
 
-    // 4. Force screen media emulation
-    await page.emulateMediaType('screen');
+    const filename = sanitizeFilename(req.body.filename);
 
-    // 5. Generate PDF
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '15mm',
-        bottom: '15mm',
-        left: '10mm',
-        right: '10mm',
-      },
-    });
+    res.setHeader("Content-Type", "application/pdf");
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-    res.setHeader('Content-Length', pdfBuffer.length);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(
+        filename,
+      )}`,
+    );
+
+    res.setHeader("Content-Length", pdfBuffer.length);
+
+    res.setHeader("Cache-Control", "no-store");
 
     return res.end(pdfBuffer);
   } catch (error) {
-    console.error('PDF Generation Failed:', error);
+    if (error?.name === "ZodError") {
+      return res.status(400).json({
+        error: "Invalid invoice data",
 
-    // If browser crashed mid-generation, ensure instance is reset
-    if (browserInstance && !browserInstance.connected) {
-      browserInstance = null;
+        issues: error.issues,
+      });
     }
+
+    console.error("Invoice PDF generation failed:", error);
 
     return res.status(500).json({
-      error: 'Failed to generate PDF',
-      details: error.message,
+      error: "Unable to generate invoice",
     });
-  } finally {
-    if (page && !page.isClosed()) {
-      await page.close().catch(() => {});
-    }
   }
-};
+}
 
 module.exports = {
-  pdfDownload,
+  listTemplates,
+  getTemplateDefinition,
+  downloadPdf,
 };
