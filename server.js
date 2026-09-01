@@ -28,7 +28,7 @@ app.get('/', (req, res) => {
 });
 
 // API Routes - Versioned
-app.use('/api', require('./routes/index'));
+app.use('/api', require('./src/routes/index'));
 
 // 404 Handler
 app.use((req, res) => {
