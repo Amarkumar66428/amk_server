@@ -31,10 +31,3 @@ dist/
 build/
 
 # Testing
-coverage/
-.nyc_output/
-
-# Temporary files
-tmp/
-temp/
-
