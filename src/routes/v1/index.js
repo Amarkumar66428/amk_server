@@ -2,12 +2,10 @@ const express = require('express');
 const router = express.Router();
 
 // Import v1 route modules
-const weatherRoutes = require('./weather.routes');
 // const authRoutes = require('./auth.routes');
 // const userRoutes = require('./user.routes');
 
 // V1 Route definitions
-router.use('/weather', weatherRoutes);
 // router.use('/auth', authRoutes);
 // router.use('/users', userRoutes);
 

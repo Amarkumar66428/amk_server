@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amk-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amk-backend
+  template:
+    metadata:
+      labels:
+        app: amk-backend
+    spec:
+      containers:
+        - name: amk-backend
+          image: amk-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          env:
+              - name: PORT
+                value: "5000"
+              - name: NODE_ENV
+                value: "Development"
+              - name: MONGODB_URI
+                value: "mongodb://mongodb-service:27017/amko"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amk-backend-service
+spec:
+  type: NodePort
+  selector:
+    app: amk-backend
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+      nodePort: 30200
+
